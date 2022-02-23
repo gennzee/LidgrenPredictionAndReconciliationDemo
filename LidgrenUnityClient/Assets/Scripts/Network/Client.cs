@@ -19,6 +19,8 @@ public class Client : MonoBehaviour
     private void Awake()
     {
         var config = new NetPeerConfiguration(Constant.APP_IDENTIFIER);
+        /*config.SimulatedRandomLatency = 0.5f;
+        config.SimulatedLoss = 0.2f;*/
         config.AutoFlushSendQueue = false;
 
         client = new NetClient(config);
@@ -61,16 +63,14 @@ public class Client : MonoBehaviour
                 case NetIncomingMessageType.Data:
                     //Get Packet Type
                     byte packetType = message.ReadByte();
-
                     //Create packet
                     IPacket packet;
-
                     switch (packetType)
                     {
-                        case (byte)PacketTypes.StatePayloadPacket:
-                            packet = new StatePayloadPacket();
+                        case (byte)PacketTypes.ClientStatePacket:
+                            packet = new ClientStatePacket();
                             packet.NetIncomingMessageToPacket(message);
-                            allPlayers[((StatePayloadPacket)packet).playerId].GetComponent<Movement>().OnServerMovementState((StatePayloadPacket)packet);
+                            allPlayers[((ClientStatePacket)packet).playerId].GetComponent<Movement>().OnServerMovementState((ClientStatePacket)packet);
                             break;
                         case (byte)PacketTypes.LocalPlayerPacket:
                             packet = new LocalPlayerPacket();
@@ -86,11 +86,6 @@ public class Client : MonoBehaviour
                             packet = new PlayerDisconnectPacket();
                             packet.NetIncomingMessageToPacket(message);
                             DisconnectPlayer((PlayerDisconnectPacket)packet);
-                            break;
-                        case (byte)PacketTypes.MovementInputPacket:
-                            packet = new MovementInputPacket();
-                            packet.NetIncomingMessageToPacket(message);
-                            UpdateMovementInputPacket((MovementInputPacket)packet);
                             break;
                         default:
                             Debug.LogWarning("Unhandled Packet Type");
@@ -123,6 +118,8 @@ public class Client : MonoBehaviour
         {
             player.Value.GetComponent<Movement>().HandleInputMovement();
         }
+        /*if (allPlayers.Count > 0)
+            allPlayers[LocalPlayerId].GetComponent<Movement>().HandleInputMovement();*/
     }
 
     public void ExtractLocalPlayerInformation(LocalPlayerPacket localPlayerPacket)
@@ -149,12 +146,6 @@ public class Client : MonoBehaviour
             _player.transform.name = "Player-" + packet.playerId;
         }
         allPlayers.Add(packet.playerId, _player);
-    }
-
-    public void UpdateMovementInputPacket(MovementInputPacket packet)
-    {
-        allPlayers[packet.playerId].GetComponent<Movement>().Velocity = new Vector2(packet.velX, packet.velY);
-        allPlayers[packet.playerId].GetComponent<Movement>().Position = new Vector2(packet.posX, packet.posY);
     }
 
     public void SendDisconnect()

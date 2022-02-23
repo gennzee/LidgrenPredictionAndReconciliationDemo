@@ -2,26 +2,32 @@ using UnityEngine;
 using LidgrenServer;
 using System.Collections.Generic;
 using Lidgren.Network;
+using UnityEngine.SceneManagement;
 
 public class Server : MonoBehaviour
 {
     public static NetServer server;
-    
+
     public static float timer;
     public static float timeBetweenTicks;
     public static int currentTick;
-    
 
-    public static Dictionary<string, PlayerData> playerDatas;
+
+    public static Dictionary<string, GameObject> playerDatas;
     public List<string> players;
+    public Queue<InputMessagePacket> serverInputMsgs;
+    public static Scene predictionScene;
+    public static PhysicsScene2D predictionPhysicsScene;
 
     private void Awake()
     {
-        QualitySettings.vSyncCount = 0;
-        Application.targetFrameRate = 30;
-    
+        /*QualitySettings.vSyncCount = 0;
+        Application.targetFrameRate = 30;*/
+
         NetPeerConfiguration config = new NetPeerConfiguration(Constant.APP_IDENTIFIER);
         config.MaximumConnections = Constant.MAX_CONNECTIONS;
+        /*config.SimulatedRandomLatency = 0.5f;
+        config.SimulatedLoss = 0.2f;*/
         config.Port = Constant.PORT;
 
         server = new NetServer(config);
@@ -32,8 +38,9 @@ public class Server : MonoBehaviour
     private void Start()
     {
         timeBetweenTicks = 1f / Constant.SERVER_TICK_RATE;
-        playerDatas = new Dictionary<string, PlayerData>();
+        playerDatas = new Dictionary<string, GameObject>();
         players = new List<string>();
+        serverInputMsgs = new Queue<InputMessagePacket>();
     }
 
     private void Update()
@@ -43,7 +50,7 @@ public class Server : MonoBehaviour
         {
             timer -= timeBetweenTicks;
             HandleTick();
-            HandleTickForAllPlayer();
+            HandleDataToSendForClients();
             currentTick++;
         }
     }
@@ -65,20 +72,15 @@ public class Server : MonoBehaviour
                     IPacket packet;
                     switch (packetType)
                     {
-                        case (byte)PacketTypes.InputPayloadPacket:
-                            packet = new InputPayloadPacket();
+                        case (byte)PacketTypes.ClientInputMessagePacket:
+                            packet = new InputMessagePacket();
                             packet.NetIncomingMessageToPacket(message);
-                            playerDatas[((InputPayloadPacket)packet).playerId].obj.GetComponent<PlayerMovement>().OnClientInput((InputPayloadPacket)packet);
+                            playerDatas[((InputMessagePacket)packet).playerId].GetComponent<PlayerMovement2>().HandleTick((InputMessagePacket)packet);
                             break;
                         case (byte)PacketTypes.PlayerDisconnectPacket:
                             packet = new PlayerDisconnectPacket();
                             packet.NetIncomingMessageToPacket(message);
                             SendPlayerDisconnectPacket(all, (PlayerDisconnectPacket)packet);
-                            break;
-                        case (byte)PacketTypes.MovementInputPacket:
-                            packet = new MovementInputPacket();
-                            packet.NetIncomingMessageToPacket(message);
-                            SendMovementInputPacket(all, (MovementInputPacket)packet);
                             break;
                         default:
                             Debug.LogError("Unhandled data / packet type: " + packetType);
@@ -113,11 +115,11 @@ public class Server : MonoBehaviour
         }
     }
 
-    public void HandleTickForAllPlayer()
+    public void HandleDataToSendForClients()
     {
         foreach (var playerObj in playerDatas)
         {
-            playerObj.Value.obj.GetComponent<PlayerMovement>().HandleTick();
+            //playerObj.Value.GetComponent<PlayerMovement2>().DataSendToClientAfterSimulatePhysic();
         }
     }
 
@@ -133,9 +135,10 @@ public class Server : MonoBehaviour
     public void SpawnPlayers(List<NetConnection> all, NetConnection local, string playerId)
     {
         // Instantite player object and add to dictionary and spawn new player on server
-        GameObject playerObj = (GameObject) Instantiate(Resources.Load("Player"), Vector3.zero, new Quaternion(), GameObject.Find("Players").transform);
+        GameObject playerObj = (GameObject)Instantiate(Resources.Load("Player"), Vector3.zero, new Quaternion(), GameObject.Find("Players").transform);
         playerObj.name = playerId;
-        playerDatas[playerId] = new PlayerData() { horizontal = 0, vertical = 0, obj = playerObj };
+        // Add player to list 
+        playerDatas[playerId] = playerObj;
         // Add player to list to show up on inspector
         players.Add(playerId);
         // Spawn all the clients on the local player
@@ -149,15 +152,14 @@ public class Server : MonoBehaviour
         SendSpawnPacketToAll(all, playerId);
     }
 
-    public void SendSpawnPacketToLocal(NetConnection local, string playerId, PlayerData playerData)
+    public void SendSpawnPacketToLocal(NetConnection local, string playerId, GameObject playerData)
     {
         Debug.LogWarning("Sending user spawn message for player " + playerId);
 
-        playerDatas[playerId].posX = playerData.posX;
-        playerDatas[playerId].posY = playerData.posY;
-        
+        Vector2 playerPosition = playerData.GetComponent<Rigidbody2D>().position;
+
         NetOutgoingMessage outgoingMessage = server.CreateMessage();
-        new SpawnPacket() { playerId = playerId, x = playerData.posX, y = playerData.posY }.PacketToNetOutGoingMessage(outgoingMessage);
+        new SpawnPacket() { playerId = playerId, x = playerPosition.x, y = playerPosition.y }.PacketToNetOutGoingMessage(outgoingMessage);
         server.SendMessage(outgoingMessage, local, NetDeliveryMethod.ReliableOrdered, 0);
     }
 
@@ -165,35 +167,22 @@ public class Server : MonoBehaviour
     {
         Debug.LogWarning("Sending user spawn message for player " + playerId);
 
-        playerDatas[playerId].posX = 0;
-        playerDatas[playerId].posY = 0;
-        
+        Vector2 playerPosition = playerDatas[playerId].GetComponent<Rigidbody2D>().position;
+
         NetOutgoingMessage outgoingMessage = server.CreateMessage();
-        new SpawnPacket() { playerId = playerId, x = 0, y = 0 }.PacketToNetOutGoingMessage(outgoingMessage);
+        new SpawnPacket() { playerId = playerId, x = playerPosition.x, y = playerPosition.y }.PacketToNetOutGoingMessage(outgoingMessage);
         server.SendMessage(outgoingMessage, all, NetDeliveryMethod.ReliableOrdered, 0);
     }
 
     public void SendPlayerDisconnectPacket(List<NetConnection> all, PlayerDisconnectPacket packet)
     {
         Debug.LogWarning("Disconnecting for " + packet.playerId);
-        DestroyImmediate(playerDatas[packet.playerId].obj);
+        DestroyImmediate(playerDatas[packet.playerId]);
         playerDatas.Remove(packet.playerId);
         players.Remove(packet.playerId);
 
         NetOutgoingMessage outgoingMessage = server.CreateMessage();
         packet.PacketToNetOutGoingMessage(outgoingMessage);
-        server.SendMessage(outgoingMessage, all, NetDeliveryMethod.ReliableOrdered, 0);
-    }
-
-    public void SendMovementInputPacket(List<NetConnection> all, MovementInputPacket packet)
-    {
-        Debug.LogWarning("Sending movement input for player " + packet.playerId);
-
-        playerDatas[packet.playerId].posX = packet.posX;
-        playerDatas[packet.playerId].posY = packet.posY;
-        
-        NetOutgoingMessage outgoingMessage = server.CreateMessage();
-        new MovementInputPacket() { playerId = packet.playerId, posX = packet.posX, posY = packet.posY }.PacketToNetOutGoingMessage(outgoingMessage);
         server.SendMessage(outgoingMessage, all, NetDeliveryMethod.ReliableOrdered, 0);
     }
 }

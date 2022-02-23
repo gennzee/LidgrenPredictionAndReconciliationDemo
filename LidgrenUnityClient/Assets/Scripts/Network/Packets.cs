@@ -15,7 +15,9 @@ namespace LidgrenClient
         InputPayloadPacket,
         StatePayloadPacket,
         PlayerDisconnectPacket,
-        MovementInputPacket
+        MovementInputPacket,
+        ClientInputMessagePacket,
+        ClientStatePacket
     }
 
     public interface IPacket
@@ -29,6 +31,70 @@ namespace LidgrenClient
         public abstract void PacketToNetOutGoingMessage(NetOutgoingMessage message);
     }
 
+    public class ClientStatePacket : Packet
+    {
+        public string playerId;
+        public int tick;
+        public Vector2 velocity;
+        public Vector2 position;
+        public float rotation;
+
+        public override void NetIncomingMessageToPacket(NetIncomingMessage message)
+        {
+            playerId = message.ReadString();
+            tick = message.ReadInt32();
+            float velX = message.ReadFloat();
+            float velY = message.ReadFloat();
+            velocity = new Vector2(velX, velY);
+            float posX = message.ReadFloat();
+            float posY = message.ReadFloat();
+            position = new Vector2(posX, posY);
+            rotation = message.ReadFloat();
+        }
+
+        public override void PacketToNetOutGoingMessage(NetOutgoingMessage message)
+        {
+            message.Write((byte)PacketTypes.ClientStatePacket);
+            message.Write(playerId);
+            message.Write(tick);
+            message.Write(velocity.x);
+            message.Write(velocity.y);
+            message.Write(position.x);
+            message.Write(position.y);
+            message.Write(rotation);
+        }
+    }
+
+    public class InputMessagePacket : Packet
+    {
+        public string playerId;
+        public int tick;
+        public Inputs inputs;
+
+        public override void NetIncomingMessageToPacket(NetIncomingMessage message)
+        {
+            playerId = message.ReadString();
+            tick = message.ReadInt32();
+            inputs = new Inputs()
+            {
+                up = message.ReadBoolean(),
+                down = message.ReadBoolean(),
+                left = message.ReadBoolean(),
+                right = message.ReadBoolean()
+            };
+        }
+
+        public override void PacketToNetOutGoingMessage(NetOutgoingMessage message)
+        {
+            message.Write((byte)PacketTypes.ClientInputMessagePacket);
+            message.Write(playerId);
+            message.Write(tick);
+            message.Write(inputs.up);
+            message.Write(inputs.down);
+            message.Write(inputs.left);
+            message.Write(inputs.right);
+        }
+    }
 
     public class InputPayloadPacket : Packet
     {
@@ -131,39 +197,6 @@ namespace LidgrenClient
         {
             message.Write((byte)PacketTypes.PlayerDisconnectPacket);
             message.Write(playerId);
-        }        
-    }
-
-    public class MovementInputPacket : Packet
-    {
-        public string playerId { get; set; }
-        public float horizontal { get; set; }
-        public float vertical { get; set; }
-        public float posX { get; set; }
-        public float posY { get; set; }
-        public float velX { get; set; }
-        public float velY { get; set; }
-        public override void NetIncomingMessageToPacket(NetIncomingMessage message)
-        {
-            playerId = message.ReadString();
-            horizontal = message.ReadFloat();
-            vertical = message.ReadFloat();
-            posX = message.ReadFloat();
-            posY = message.ReadFloat();
-            velX = message.ReadFloat();
-            velY = message.ReadFloat();
-        }
-
-        public override void PacketToNetOutGoingMessage(NetOutgoingMessage message)
-        {
-            message.Write((byte)PacketTypes.MovementInputPacket);
-            message.Write(playerId);
-            message.Write(horizontal);
-            message.Write(vertical);
-            message.Write(posX);
-            message.Write(posY);
-            message.Write(velX);
-            message.Write(velY);
         }
     }
 }

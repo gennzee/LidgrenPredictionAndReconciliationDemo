@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Lidgren.Network;
+using UnityEngine.SceneManagement;
 
 namespace LidgrenServer
 {
@@ -13,7 +14,7 @@ namespace LidgrenServer
         private void Awake()
         {
             stateBuffer = new StatePayloadPacket[Constant.BUFFER_SIZE];
-            inputQueue = new Queue<InputPayloadPacket>();
+            inputQueue = new Queue<InputPayloadPacket>();            
         }
         
         public void OnClientInput(InputPayloadPacket inputPayload)
@@ -47,8 +48,8 @@ namespace LidgrenServer
             // Should always be in sync with same function on Client
             transform.position += inputVector * Constant.MOVE_SPEED * Server.timeBetweenTicks;
             // Set data for playerDatas
-            Server.playerDatas[inputPayload.playerId].posX = transform.position.x;
-            Server.playerDatas[inputPayload.playerId].posX = transform.position.y;
+            /*Server.playerDatas[inputPayload.playerId].posX = transform.position.x;
+            Server.playerDatas[inputPayload.playerId].posX = transform.position.y;*/
 
             return new StatePayloadPacket()
             {
